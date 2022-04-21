@@ -144,19 +144,23 @@ def calc_macd(data, short_period, long_period):
 
 # Bollinger bands
 def calc_bollinger_bands(data):
-    middle_band = calc_sma(data[-20:], "close")
+    # remove extra ohlc values so we can easily calc. std dev using numpy
     data_list = []
-    for val in data[-20:]:
+    for val in data:
         data_list.append(val["close"])
-    std_dev = np.std(data_list)
-    upper_band = middle_band + (std_dev * 2)
-    lower_band = middle_band - (std_dev * 2)
-    return {
-        "upper": upper_band,
-        "middle": middle_band,
-        "lower": lower_band
-    }
+
+    # we want the bollinger band for all periods
+    bands = []
+    for i in range(len(data)-20):
+        middle = calc_sma(data[i:20+i], "close")
+        std_dev = np.std(data_list[i:20+i])
+        upper = middle + (std_dev * 2)
+        lower = middle - (std_dev * 2)
+        band = {"upper": upper, "middle": middle, "lower": lower, "close_price": data[i+19]["close"], "high_price": data[i+19]["high"], "low_price": data[i+19]["low"]}
+        bands.append(band)
+
+    return bands
 
 price_data = send_get_request("/markets/BTC-PERP/candles?resolution=3600")
 bollinger_bands = calc_bollinger_bands(price_data["result"])
-print(bollinger_bands)
+print(bollinger_bands[-1:])

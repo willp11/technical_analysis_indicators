@@ -1,12 +1,12 @@
-from indicators import send_get_request, calc_rsi, calc_macd
+from indicators import send_get_request, calc_rsi, calc_macd, calc_bollinger_bands
 
 # timeframe in minutes
-def get_price_and_rsi(timeframe, start=None, end=None):
+def get_price_and_rsi(market, timeframe, start=None, end=None):
     timeframe *= 60 # adjust minutes to seconds
     if start == None or end == None:
-        url = "/markets/BTC-PERP/candles?resolution=" + str(timeframe)
+        url = "/markets/" + market + "/candles?resolution=" + str(timeframe)
     else:
-        url = "/markets/BTC-PERP/candles?resolution=" + str(timeframe) + "&start_time=" + str(start) + "&end_time=" + str(end)
+        url = "/markets/" + market + "/candles?resolution=" + str(timeframe) + "&start_time=" + str(start) + "&end_time=" + str(end)
     res = send_get_request(url)
     prices = res["result"]
 
@@ -19,10 +19,6 @@ def get_price_and_rsi(timeframe, start=None, end=None):
         data.append({"price": prices[i+16]["close"], "rsi": rsi[i]})
 
     return data
-
-# h1_data = get_price_and_rsi(60)
-# h4_data = get_price_and_rsi(240)
-# d1_data = get_price_and_rsi(1440)
 
 # possible RSI strategies:
 
@@ -79,20 +75,47 @@ def rsi_strategy_1(data, buy_threshold, sell_threshold):
 
     return {"total_profit": total_profit, "trades": trades}
 
-# # H1 
-# buy_30_sell_70_h1 = rsi_strategy_1(h1_data, 30, 70) # profit = 3011 (26 trades)
-# buy_25_sell_75_h1 = rsi_strategy_1(h1_data, 25, 75) # profit = 4270 (21 trades)
-# buy_20_sell_80_h1 = rsi_strategy_1(h1_data, 20, 80) # profit = -9694 (9 trades)
-# print(buy_30_sell_70_h1, buy_25_sell_75_h1, buy_20_sell_80_h1)
+# Bollinger bands strategy
+# if price touches upper band, buy middle band, target upper band and stop half way to lower band
+def bollinger_strategy(data):
+    bollinger_bands = calc_bollinger_bands(data)
+    trades = []
+    trade = None
+    order = None
+    for band in bollinger_bands:
+        # if not in a trade and haven't set an order - if price closes above upper band, set buy order at middle band
+        if trade == None and band["close_price"] >= band["upper"]:
+            order = {"side": "buy", "price": band["middle"]}
+        
+        # if have an order set, if candle low went below middle band then buy order hit
+        if trade == None and order != None and band["low_price"] <= order["price"]:
+            trade = {"side": "buy", "entry": order["price"], "exit": None}
+            order = None
+        
+        # if in a trade, if candle low below half way between middle and lower bands - stop loss hit
+        if trade != None and band["low_price"] <= (band["middle"] + band["lower"]) / 2:
+            trade["exit"] = (band["middle"] + band["lower"]) / 2
+            trades.append(trade)
+            trade = None
 
-# # H4
-# buy_30_sell_70_h4 = rsi_strategy_1(h4_data, 30, 70) # profit = -14252 (33 trades)
-# buy_25_sell_75_h4 = rsi_strategy_1(h4_data, 25, 75) # profit = -6054 (17 trades)
-# buy_20_sell_80_h4 = rsi_strategy_1(h4_data, 20, 80) # profit = 14793 (5 trades)
-# print(buy_30_sell_70_h4, buy_25_sell_75_h4, buy_20_sell_80_h4)
+        # if in a trade, if candle high above upper band - target hit
+        if trade != None and band["high_price"] >= band["upper"]:
+            trade["exit"] = band["upper"]
+            trades.append(trade)
+            trade = None
 
-# # D1
-# buy_30_sell_70_d1 = rsi_strategy_1(d1_data, 30, 70) # profit = -10813 (26 trades)
-# buy_25_sell_75_d1 = rsi_strategy_1(d1_data, 25, 75) # profit = 12658 (15 trades)
-# buy_20_sell_80_d1 = rsi_strategy_1(d1_data, 20, 80) # profit = -12871 (7 trades)
-# print(buy_30_sell_70_d1, buy_25_sell_75_d1, buy_20_sell_80_d1)
+    total_profit = 0
+    for trade in trades:
+        if trade["side"] == "buy":
+            trade["profit"] = trade["exit"] - trade["entry"]
+            total_profit += trade["profit"]
+        elif trade["side"] == "sell":
+            trade["profit"] = trade["entry"] - trade["exit"]
+            total_profit += trade["profit"]
+        trade["cum_profit"] = total_profit
+
+    return {"total_profit": total_profit, "trades": trades}
+
+price_data = send_get_request("/markets/BTC-PERP/candles?resolution=3600")
+bollinger_results = bollinger_strategy(price_data["result"])
+print(bollinger_results)
