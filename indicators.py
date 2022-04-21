@@ -1,4 +1,5 @@
 import requests
+import numpy as np
 
 ohlc_types = ["open", "high", "low", "close"]
 
@@ -95,7 +96,7 @@ def calc_rsi(data, periods, ohlc, return_all: bool):
             
             if avg_loss > 0:
                 rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + (avg_gain / avg_loss)) )
+                rsi = 100 - (100 / (1 + (rs)) )
             else:
                 rsi = 100
                 
@@ -140,3 +141,22 @@ def calc_macd(data, short_period, long_period):
     signal_line = signal_line[len(signal_line) - 1]
     
     return {"macd_line": macd_line, "signal_line": signal_line}
+
+# Bollinger bands
+def calc_bollinger_bands(data):
+    middle_band = calc_sma(data[-20:], "close")
+    data_list = []
+    for val in data[-20:]:
+        data_list.append(val["close"])
+    std_dev = np.std(data_list)
+    upper_band = middle_band + (std_dev * 2)
+    lower_band = middle_band - (std_dev * 2)
+    return {
+        "upper": upper_band,
+        "middle": middle_band,
+        "lower": lower_band
+    }
+
+price_data = send_get_request("/markets/BTC-PERP/candles?resolution=3600")
+bollinger_bands = calc_bollinger_bands(price_data["result"])
+print(bollinger_bands)
